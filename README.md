@@ -19,7 +19,7 @@ Attaches power requirements to the Rust refrigerator along with optional food de
 ```
 
   - `branding` -- Fridge name, shown only in GUI upon opening fridge
-  - `decay` -- Unused
-  - `foodDecay` -- If true, food inside an unpowered fridge will decay over time
+  - `decay` -- If true, food inside an unpowered fridge will decay over time.  If false, the next two configs will be unimportant.
+  - `foodDecay` -- Percentage of food left behind on each stack at each timespan.  The default of 0.98 should decrement by 2% on each run.
   - `timespan` -- How often to process food items in an unpowered fridge
 
