@@ -8,7 +8,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Electric Fridge", "RFC1920", "1.0.1")]
+    [Info("Electric Fridge", "RFC1920", "1.0.2")]
     [Description("Is your refrigerator running?")]
 
     class ElectricFridge : RustPlugin
@@ -18,10 +18,8 @@ namespace Oxide.Plugins
         const string FRBTN = "fridge.status";
         private DateTime lastUpdate;
 
-        #region Message
         private string Lang(string key, string id = null, params object[] args) => string.Format(lang.GetMessage(key, this, id), args);
         private void Message(IPlayer player, string key, params object[] args) => player.Reply(Lang(key, player.Id, args));
-        #endregion
 
         void OnServerInitialized()
         {
@@ -48,33 +46,67 @@ namespace Oxide.Plugins
 
         void OnEntitySpawned(BaseEntity fridge)
         {
+            if (fridge == null) return;
             if (fridge.ShortPrefabName.Equals("fridge.deployed"))
             {
                 string prefabname = "assets/prefabs/deployable/playerioents/electricheater/electrical.heater.prefab";
                 var go = GameManager.server.CreatePrefab(prefabname);
+                if (go == null) return;
+
                 go.SetActive(true);
                 var ent = go.GetComponent<BaseEntity>();
+                if (ent != null)
+                {
+                    ent.transform.localEulerAngles = new Vector3(270, 270, 270);
+                    ent.transform.localPosition = new Vector3(-0.38f, 0.65f, 0);
+                    ent.SetParent(fridge);
+                    fridge.gameObject.AddComponent<FoodDecay>();
 
-                ent.transform.localEulerAngles = new Vector3(270, 270, 270);
-                ent.transform.localPosition = new Vector3(-0.38f, 0.65f, 0);
-                ent.SetParent(fridge);
-                fridge.gameObject.AddComponent<FoodDecay>();
-
-                BasePlayer player = BasePlayer.FindByID(fridge.OwnerID);
-                Message(player.IPlayer, fridge.name);
+                    BasePlayer player = BasePlayer.FindByID(fridge.OwnerID);
+                    Message(player.IPlayer, fridge.name);
+                }
             }
+        }
+
+        private object CanPickupEntity(BasePlayer player, BaseCombatEntity fridge)
+        {
+            if (player == null || fridge == null) return null;
+            if (fridge.ShortPrefabName.Equals("fridge.deployed"))
+            {
+                var electrified = fridge.GetComponentInChildren<ElectricalHeater>() ?? null;
+                if (electrified == null)
+                {
+                    return null;
+                }
+                if (electrified.IsPowered())
+                {
+                    if (configData.Settings.blockPickup)
+                    {
+                        // Block pickup when powered, because danger or something.
+                        return false;
+                    }
+                }
+            }
+            return null;
         }
 
         private object CanLootEntity(BasePlayer player, StorageContainer container)
         {
-            var electrified = container.GetComponentInChildren<ElectricalHeater>() ?? null;
-            if(electrified == null) return null;
+            var fridge = container.GetComponentInParent<BaseEntity>();
+            if (fridge.ShortPrefabName.Equals("fridge.deployed"))
+            {
+                var electrified = container.GetComponentInChildren<ElectricalHeater>() ?? null;
+                if (electrified == null) return null;
+                if (!electrified.IsPowered() && configData.Settings.blockLooting)
+                {
+                    return false;
+                }
 
-            var status = Lang("off");
-            if(electrified.IsPowered()) status = Lang("on");
+                var status = Lang("off");
+                if (electrified.IsPowered()) status = Lang("on");
 
-            PowerGUI(player, status);
-
+                PowerGUI(player, status);
+            }
             return null;
         }
 
@@ -93,6 +125,60 @@ namespace Oxide.Plugins
             UI.Label(ref container, FRBTN, UI.Color("#ffffff", 1f), label, 12, "0 0", "1 1");
 
             CuiHelper.AddUi(player, container);
+        }
+
+        private class ConfigData
+        {
+            public Settings Settings = new Settings();
+            public VersionNumber Version;
+        }
+
+        private class Settings
+        {
+            public string branding;
+            public bool decay;
+            public float foodDecay;
+            public float timespan;
+            public bool blockPickup;
+            public bool blockLooting;
+        }
+
+        protected override void LoadDefaultConfig()
+        {
+            Puts("New configuration file created.");
+            configData = new ConfigData
+            {
+                Settings = new Settings()
+                {
+                    decay = false,
+                    branding = "Frigidaire",
+                    foodDecay = 0.98f, // 2% loss per timespan, rounded down.
+                    timespan = 600f, // 10 minutes
+                    blockPickup = true,
+                    blockLooting = false
+                },
+                Version = Version
+            };
+            SaveConfig(configData);
+        }
+
+        private void LoadConfigValues()
+        {
+            configData = Config.ReadObject<ConfigData>();
+
+            if (configData.Version < new VersionNumber(1, 0, 2))
+            {
+                configData.Settings.blockPickup = true;
+                configData.Settings.blockLooting = false;
+            }
+
+            configData.Version = Version;
+            SaveConfig(configData);
+        }
+
+        private void SaveConfig(ConfigData config)
+        {
+            Config.WriteObject(config, true);
         }
 
         public static class UI
@@ -145,50 +231,6 @@ namespace Oxide.Plugins
                 int blue = int.Parse(hexColor.Substring(4, 2), NumberStyles.AllowHexSpecifier);
                 return $"{(double)red / 255} {(double)green / 255} {(double)blue / 255} {alpha}";
             }
-        }
-
-        private class ConfigData
-        {
-            public Settings Settings = new Settings();
-            public VersionNumber Version;
-        }
-
-        private class Settings
-        {
-            public string branding;
-            public bool decay;
-            public float foodDecay;
-            public float timespan;
-        }
-
-        protected override void LoadDefaultConfig()
-        {
-            Puts("New configuration file created.");
-            configData = new ConfigData
-            {
-                Settings = new Settings()
-                {
-                    decay = false,
-                    branding = "Frigidaire",
-                    foodDecay = 0.98f, // 2% loss per timespan, rounded down.
-                    timespan = 600f // 10 minutes
-                },
-                Version = Version
-            };
-            SaveConfig(configData);
-        }
-
-        private void LoadConfigValues()
-        {
-            configData = Config.ReadObject<ConfigData>();
-            configData.Version = Version;
-
-            SaveConfig(configData);
-        }
-
-        private void SaveConfig(ConfigData config)
-        {
-            Config.WriteObject(config, true);
         }
 
         class FoodDecay : MonoBehaviour
