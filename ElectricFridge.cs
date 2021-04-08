@@ -1,4 +1,26 @@
-﻿using Oxide.Core;
+﻿#region License (GPL v3)
+/*
+    Electric Fridge
+    Copyright (c) 2021 RFC1920 <desolationoutpostpve@gmail.com>
+
+    This program is free software; you can redistribute it and/or
+    modify it under the terms of the GNU General Public License
+    as published by the Free Software Foundation; either version 2
+    of the License, or (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program; if not, write to the Free Software
+    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+    Optionally you can also view the license at <http://www.gnu.org/licenses/>.
+*/
+#endregion
+using Oxide.Core;
 using Oxide.Core.Libraries.Covalence;
 using Oxide.Game.Rust.Cui;
 using System;
@@ -8,7 +30,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Electric Fridge", "RFC1920", "1.0.2")]
+    [Info("Electric Fridge", "RFC1920", "1.0.3")]
     [Description("Is your refrigerator running?")]
 
     class ElectricFridge : RustPlugin
@@ -17,14 +39,22 @@ namespace Oxide.Plugins
         public static ElectricFridge Instance = null;
         const string FRBTN = "fridge.status";
         private DateTime lastUpdate;
+        private bool debug = false;
+        private bool enabled = false;
 
         private string Lang(string key, string id = null, params object[] args) => string.Format(lang.GetMessage(key, this, id), args);
         private void Message(IPlayer player, string key, params object[] args) => player.Reply(Lang(key, player.Id, args));
+
+        private void DoLog(string message)
+        {
+            if (debug) Puts(message);
+        }
 
         void OnServerInitialized()
         {
             Instance = this;
             LoadConfigValues();
+            enabled = true;
         }
 
         protected override void LoadDefaultMessages()
@@ -46,11 +76,12 @@ namespace Oxide.Plugins
 
         void OnEntitySpawned(BaseEntity fridge)
         {
+            if (!enabled) return;
             if (fridge == null) return;
+            if (string.IsNullOrEmpty(fridge.ShortPrefabName)) return;
             if (fridge.ShortPrefabName.Equals("fridge.deployed"))
             {
-                string prefabname = "assets/prefabs/deployable/playerioents/electricheater/electrical.heater.prefab";
-                var go = GameManager.server.CreatePrefab(prefabname);
+                var go = GameManager.server.CreatePrefab("assets/prefabs/deployable/playerioents/electricheater/electrical.heater.prefab");
                 if (go == null) return;
 
                 go.SetActive(true);
@@ -60,10 +91,12 @@ namespace Oxide.Plugins
                     ent.transform.localEulerAngles = new Vector3(270, 270, 270);
                     ent.transform.localPosition = new Vector3(-0.38f, 0.65f, 0);
                     ent.SetParent(fridge);
+                    //ent.SetFlag(BaseEntity.Flags.Locked, true);
+                    DoLog("Adding FoodDecay object");
                     fridge.gameObject.AddComponent<FoodDecay>();
 
                     BasePlayer player = BasePlayer.FindByID(fridge.OwnerID);
-                    Message(player.IPlayer, fridge.name);
+                    if (player != null) Message(player.IPlayer, fridge.name);
                 }
             }
         }
@@ -71,7 +104,20 @@ namespace Oxide.Plugins
         private object CanPickupEntity(BasePlayer player, BaseCombatEntity fridge)
         {
             if (player == null || fridge == null) return null;
-            if (fridge.ShortPrefabName.Equals("fridge.deployed"))
+            if (fridge.ShortPrefabName.Equals("electrical.heater"))
+            {
+                var f = fridge.GetParentEntity();
+                if (f != null)
+                {
+                    // Block pickup of heater parented by fridge.  True would allow other plugins to override, or so it seems...
+                    if (f.ShortPrefabName == "fridge.deployed")
+                    {
+                        DoLog("Blocked pickup of heater attached to fridge.");
+                        return false;
+                    }
+                }
+            }
+            else if (fridge.ShortPrefabName.Equals("fridge.deployed"))
             {
                 var electrified = fridge.GetComponentInChildren<ElectricalHeater>() ?? null;
                 if (electrified == null)
@@ -83,7 +129,7 @@ namespace Oxide.Plugins
                     if (configData.Settings.blockPickup)
                     {
                         // Block pickup when powered, because danger or something.
-                        return false;
+                        return true;
                     }
                 }
             }
@@ -240,9 +286,15 @@ namespace Oxide.Plugins
 
             public void Awake()
             {
-                box = GetComponent<StorageContainer>();
-                heater = GetComponentInChildren<ElectricalHeater>();
-                if(Instance.configData.Settings.decay) InvokeRepeating("ProcessContents", 0, Instance.configData.Settings.timespan);
+                box = GetComponent<StorageContainer>() ?? null;
+                Instance.DoLog("Found box");
+                //heater = GetComponentInChildren<ElectricalHeater>() ?? null;
+                heater = GetComponent<ElectricalHeater>() ?? null;
+                Instance.DoLog("Found heater");
+                if (heater != null)
+                {
+                    if (Instance.configData.Settings.decay) InvokeRepeating("ProcessContents", 1, Instance.configData.Settings.timespan);
+                }
             }
 
             public void OnDisable()
