@@ -30,7 +30,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Electric Fridge", "RFC1920", "1.0.3")]
+    [Info("Electric Fridge", "RFC1920", "1.0.4")]
     [Description("Is your refrigerator running?")]
 
     class ElectricFridge : RustPlugin
@@ -95,8 +95,8 @@ namespace Oxide.Plugins
                     DoLog("Adding FoodDecay object");
                     fridge.gameObject.AddComponent<FoodDecay>();
 
-                    BasePlayer player = BasePlayer.FindByID(fridge.OwnerID);
-                    if (player != null) Message(player.IPlayer, fridge.name);
+                    //BasePlayer player = BasePlayer.FindByID(fridge.OwnerID);
+                    //if (player != null) Message(player.IPlayer, fridge.name);
                 }
             }
         }
