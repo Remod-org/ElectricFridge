@@ -30,7 +30,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Electric Fridge", "RFC1920", "1.0.4")]
+    [Info("Electric Fridge", "RFC1920", "1.0.5")]
     [Description("Is your refrigerator running?")]
 
     class ElectricFridge : RustPlugin
