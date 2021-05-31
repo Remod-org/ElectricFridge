@@ -1,6 +1,9 @@
 # ElectricFridge
 Attaches power requirements to the Rust refrigerator along with optional food decay.
 
+## Command
+  - /fr -- Enable or disable spawning electric fridge by default.  This will reverse the setting for each player initially from the current default setting below.  Memory for this setting is lost on each plugin reload or server restart, etc.  You will be notified of current status via chat.
+
 ## Configuration
 ```json
 {
@@ -11,6 +14,7 @@ Attaches power requirements to the Rust refrigerator along with optional food de
     "timespan": 600.0,
 	"blockPickup": true,
 	"blockLooting": false
+	"defaultEnabled": true
   },
   "Version": {
     "Major": 1,
@@ -26,3 +30,4 @@ Attaches power requirements to the Rust refrigerator along with optional food de
   - `timespan` -- How often to process food items in an unpowered fridge
   - `blockPickup` -- If true, block picking up fridge if powered.
   - `blockLooting` -- If true, block looting when fridge is NOT powered.
+  - `defaultEnabled` -- If true, spawn an electric fridge when placed by default.  Each player can switch this on or off using /fr.

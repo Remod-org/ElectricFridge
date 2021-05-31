@@ -45,6 +45,8 @@ namespace Oxide.Plugins
         private string Lang(string key, string id = null, params object[] args) => string.Format(lang.GetMessage(key, this, id), args);
         private void Message(IPlayer player, string key, params object[] args) => player.Reply(Lang(key, player.Id, args));
 
+        private List<string> orDefault = new List<string>();
+
         private void DoLog(string message)
         {
             if (debug) Puts(message);
@@ -55,6 +57,8 @@ namespace Oxide.Plugins
             Instance = this;
             LoadConfigValues();
             enabled = true;
+
+            AddCovalenceCommand("fr", "EnableDisable");
         }
 
         protected override void LoadDefaultMessages()
@@ -62,7 +66,9 @@ namespace Oxide.Plugins
             lang.RegisterMessages(new Dictionary<string, string>()
             {
                 { "off", "OFF" },
-                { "on", "ON" }
+                { "on", "ON" },
+                { "enabled", "Electric fridge enabled" },
+                { "disabled", "Electric fridge disabled" }
             }, this);
         }
 
@@ -81,6 +87,16 @@ namespace Oxide.Plugins
             if (string.IsNullOrEmpty(fridge.ShortPrefabName)) return;
             if (fridge.ShortPrefabName.Equals("fridge.deployed"))
             {
+                string ownerid = fridge.OwnerID.ToString();
+                if (configData.Settings.defaultEnabled && orDefault.Contains(ownerid))
+                {
+                    return;
+                }
+                else if (!configData.Settings.defaultEnabled && !orDefault.Contains(ownerid))
+                {
+                    return;
+                }
+
                 var go = GameManager.server.CreatePrefab("assets/prefabs/deployable/playerioents/electricheater/electrical.heater.prefab");
                 if (go == null) return;
 
@@ -173,6 +189,30 @@ namespace Oxide.Plugins
             CuiHelper.AddUi(player, container);
         }
 
+        [Command("fr")]
+        private void EnableDisable(IPlayer iplayer, string command, string[] args)
+        {
+            bool en = configData.Settings.defaultEnabled;
+            if (orDefault.Contains(iplayer.Id))
+            {
+                orDefault.Remove(iplayer.Id);
+            }
+            else
+            {
+                orDefault.Add(iplayer.Id);
+                en = !en;
+            }
+            switch (en)
+            {
+                case true:
+                    Message(iplayer, "enabled");
+                    break;
+                case false:
+                    Message(iplayer, "disabled");
+                    break;
+            }
+        }
+
         private class ConfigData
         {
             public Settings Settings = new Settings();
@@ -187,6 +227,7 @@ namespace Oxide.Plugins
             public float timespan;
             public bool blockPickup;
             public bool blockLooting;
+            public bool defaultEnabled = true;
         }
 
         protected override void LoadDefaultConfig()
@@ -201,7 +242,8 @@ namespace Oxide.Plugins
                     foodDecay = 0.98f, // 2% loss per timespan, rounded down.
                     timespan = 600f, // 10 minutes
                     blockPickup = true,
-                    blockLooting = false
+                    blockLooting = false,
+                    defaultEnabled = true
                 },
                 Version = Version
             };
