@@ -38,8 +38,7 @@ namespace Oxide.Plugins
         private ConfigData configData;
         public static ElectricFridge Instance = null;
         const string FRBTN = "fridge.status";
-        private DateTime lastUpdate;
-        private bool debug = false;
+        private readonly DateTime lastUpdate;
         private bool enabled = false;
 
         private string Lang(string key, string id = null, params object[] args) => string.Format(lang.GetMessage(key, this, id), args);
@@ -49,7 +48,7 @@ namespace Oxide.Plugins
 
         private void DoLog(string message)
         {
-            if (debug) Puts(message);
+            if (configData.Settings.debug) Puts(message);
         }
 
         void OnServerInitialized()
@@ -72,9 +71,26 @@ namespace Oxide.Plugins
             }, this);
         }
 
+        private void Loaded()
+        {
+            FoodDecay[] decays = UnityEngine.Object.FindObjectsOfType<FoodDecay>();
+            List<uint> parents = new List<uint>();
+            foreach (var decay in decays)
+            {
+                parents.Add(decay.GetComponentInParent<BaseEntity>().net.ID);
+            }
+
+            foreach (uint pid in parents)
+            {
+                var parent = BaseNetworkable.serverEntities.Find(pid);
+                var oldfc = parent.GetComponentInChildren<FoodDecay>();
+                UnityEngine.Object.Destroy(oldfc);
+                parent.gameObject.AddComponent<FoodDecay>();
+            }
+        }
         private void Unload()
         {
-            foreach(BasePlayer player in BasePlayer.activePlayerList)
+            foreach (BasePlayer player in BasePlayer.activePlayerList)
             {
                 CuiHelper.DestroyUi(player, FRBTN);
             }
@@ -97,43 +113,118 @@ namespace Oxide.Plugins
                     return;
                 }
 
-                var go = GameManager.server.CreatePrefab("assets/prefabs/deployable/playerioents/electricheater/electrical.heater.prefab");
-                if (go == null) return;
-
-                go.SetActive(true);
-                var ent = go.GetComponent<BaseEntity>();
-                if (ent != null)
+                BaseEntity bent = GameManager.server.CreateEntity("assets/prefabs/deployable/playerioents/gates/branch/electrical.branch.deployed.prefab", fridge.transform.position, fridge.transform.rotation, true);
+                ElectricalBranch branch = bent as ElectricalBranch;
+                if (bent != null)
                 {
-                    ent.transform.localEulerAngles = new Vector3(270, 270, 270);
-                    ent.transform.localPosition = new Vector3(-0.38f, 0.65f, 0);
-                    ent.SetParent(fridge);
-                    //ent.SetFlag(BaseEntity.Flags.Locked, true);
-                    DoLog("Adding FoodDecay object");
-                    fridge.gameObject.AddComponent<FoodDecay>();
+                    bent.transform.localEulerAngles = new Vector3(0, 270, 180);
+                    bent.transform.localPosition = new Vector3(-0.49f, 0.65f, 0);
+                    bent.OwnerID = fridge.OwnerID;
+                    bent.SetParent(fridge);
+                    UnityEngine.Object.Destroy(bent.GetComponent<DestroyOnGroundMissing>());
+                    UnityEngine.Object.Destroy(bent.GetComponent<GroundWatch>());
+                    bent.Spawn();
+                }
 
-                    //BasePlayer player = BasePlayer.FindByID(fridge.OwnerID);
-                    //if (player != null) Message(player.IPlayer, fridge.name);
+                BaseEntity hent = GameManager.server.CreateEntity("assets/prefabs/deployable/playerioents/electricheater/electrical.heater.prefab", fridge.transform.position, fridge.transform.rotation, true);
+                ElectricalHeater heater = hent as ElectricalHeater;
+                if (hent != null)
+                {
+                    hent.transform.localEulerAngles = new Vector3(90, 90, 270);
+                    hent.transform.localPosition = new Vector3(0, 0.65f, 0);
+                    hent.OwnerID = fridge.OwnerID;
+                    hent.SetParent(fridge);
+                    UnityEngine.Object.Destroy(hent.GetComponent<DestroyOnGroundMissing>());
+                    UnityEngine.Object.Destroy(hent.GetComponent<GroundWatch>());
+                    hent.Spawn();
+                }
+                DoLog("Adding FoodDecay object");
+                fridge.gameObject.AddComponent<FoodDecay>();
+
+                if (heater != null && branch != null)
+                {
+                    var inputSlot = 0;
+                    var outputSlot = 1;
+                    branch.branchAmount = 5;
+
+                    var branchIO = branch as IOEntity;
+                    var heaterIO = heater as IOEntity;
+                    IOEntity.IOSlot branchOutput = branchIO.outputs[outputSlot];
+                    IOEntity.IOSlot heaterInput = heaterIO.inputs[inputSlot];
+
+                    heaterInput.connectedTo = new IOEntity.IORef();
+                    heaterInput.connectedTo.Set(branch);
+                    heaterInput.connectedToSlot = outputSlot;
+                    heaterInput.connectedTo.Init();
+                    heaterInput.connectedTo.ioEnt._limitedNetworking = true;
+                    Puts($"Heater input slot {inputSlot.ToString()}:{heaterInput.niceName} connected to {branchIO.ShortPrefabName}:{branchOutput.niceName}");
+
+                    branchOutput.connectedTo = new IOEntity.IORef();
+                    branchOutput.connectedTo.Set(heater);
+                    branchOutput.connectedToSlot = inputSlot;
+                    branchOutput.connectedTo.Init();
+                    branchOutput.connectedTo.ioEnt._limitedNetworking = true;
+                    branch.MarkDirtyForceUpdateOutputs();
+                    branch.SendNetworkUpdate();
+                    Puts($"Branch output slot {outputSlot.ToString()}:{branchOutput.niceName} connected to {heaterIO.ShortPrefabName}:{heaterInput.niceName}");
                 }
             }
         }
 
+        private void OnEntityKill(ElectricalBranch branch)
+        {
+            var f = branch.GetParentEntity();
+            if (f != null)
+            {
+                if (f.ShortPrefabName == "fridge.deployed")
+                {
+                    f.Kill();
+                }
+            }
+        }
+        private void OnEntityKill(ElectricalHeater heater)
+        {
+            var f = heater.GetParentEntity();
+            if (f != null)
+            {
+                if (f.ShortPrefabName == "fridge.deployed")
+                {
+                    f.Kill();
+                }
+            }
+        }
+        private object CanPickupEntity(BasePlayer player, ElectricalHeater heater)
+        {
+            if (player == null || heater == null) return null;
+            var f = heater.GetParentEntity();
+
+            if (f != null)
+            {
+                if (f.ShortPrefabName.Equals("fridge.deployed"))
+                {
+                    return false;
+                }
+            }
+            return null;
+        }
+        private object CanPickupEntity(BasePlayer player, ElectricalBranch branch)
+        {
+            if (player == null || branch == null) return null;
+            var f = branch.GetParentEntity();
+
+            if (f != null)
+            {
+                if (f.ShortPrefabName.Equals("fridge.deployed"))
+                {
+                    return false;
+                }
+            }
+            return null;
+        }
         private object CanPickupEntity(BasePlayer player, BaseCombatEntity fridge)
         {
             if (player == null || fridge == null) return null;
-            if (fridge.ShortPrefabName.Equals("electrical.heater"))
-            {
-                var f = fridge.GetParentEntity();
-                if (f != null)
-                {
-                    // Block pickup of heater parented by fridge.  True would allow other plugins to override, or so it seems...
-                    if (f.ShortPrefabName == "fridge.deployed")
-                    {
-                        DoLog("Blocked pickup of heater attached to fridge.");
-                        return false;
-                    }
-                }
-            }
-            else if (fridge.ShortPrefabName.Equals("fridge.deployed"))
+            if (fridge.ShortPrefabName.Equals("fridge.deployed"))
             {
                 var electrified = fridge.GetComponentInChildren<ElectricalHeater>() ?? null;
                 if (electrified == null)
@@ -174,7 +265,7 @@ namespace Oxide.Plugins
 
         private void OnLootEntityEnd(BasePlayer player, BaseCombatEntity entity)
         {
-            if(entity == null) return;
+            if (entity == null) return;
             CuiHelper.DestroyUi(player, FRBTN);
         }
 
@@ -222,8 +313,10 @@ namespace Oxide.Plugins
         private class Settings
         {
             public string branding;
+            public bool debug;
             public bool decay;
             public float foodDecay;
+            public bool spoilFood;
             public float timespan;
             public bool blockPickup;
             public bool blockLooting;
@@ -238,8 +331,10 @@ namespace Oxide.Plugins
                 Settings = new Settings()
                 {
                     decay = false,
+                    debug = false,
                     branding = "Frigidaire",
                     foodDecay = 0.98f, // 2% loss per timespan, rounded down.
+                    spoilFood = false,
                     timespan = 600f, // 10 minutes
                     blockPickup = true,
                     blockLooting = false,
@@ -310,7 +405,7 @@ namespace Oxide.Plugins
             }
             public static string Color(string hexColor, float alpha)
             {
-                if(hexColor.StartsWith("#"))
+                if (hexColor.StartsWith("#"))
                 {
                     hexColor = hexColor.Substring(1);
                 }
@@ -321,21 +416,24 @@ namespace Oxide.Plugins
             }
         }
 
-        class FoodDecay : MonoBehaviour
+        private class FoodDecay : MonoBehaviour
         {
             private StorageContainer box;
             private ElectricalHeater heater;
+            private List<string> skipitems = new List<string>() { "pumpkin", "can_beans", "can_tuna", "green_berry", "blue_berry", "white_berry", "yellow_berry", "blueberries", "raspberries" };
+            private List<string> usitems = new List<string>() { "chicken", "humanmeat", "apple" };
+            private List<string> dotitems = new List<string>() { "meat.wolf" };
 
             public void Awake()
             {
                 box = GetComponent<StorageContainer>() ?? null;
                 Instance.DoLog("Found box");
-                //heater = GetComponentInChildren<ElectricalHeater>() ?? null;
-                heater = GetComponent<ElectricalHeater>() ?? null;
-                Instance.DoLog("Found heater");
-                if (heater != null)
+                heater = GetComponentInChildren<ElectricalHeater>() ?? null;
+                //heater = GetComponent<ElectricalHeater>() ?? null;
+                if (heater != null && Instance.configData.Settings.decay)
                 {
-                    if (Instance.configData.Settings.decay) InvokeRepeating("ProcessContents", 1, Instance.configData.Settings.timespan);
+                    Instance.DoLog("Found heater");
+                    InvokeRepeating("ProcessContents", 0, Instance.configData.Settings.timespan);
                 }
             }
 
@@ -344,16 +442,59 @@ namespace Oxide.Plugins
                 CancelInvoke("ProcessContents");
             }
 
-            void ProcessContents()
+            private void ProcessContents()
             {
                 if (Instance.configData.Settings.foodDecay <= 0) return;
-                if (heater.IsPowered()) return;
-
-                foreach (var item in box.inventory.itemList)
+                if (heater.IsPowered())
                 {
-                    if (item.amount < 1) continue;
-                    var oldamt = item.amount.ToString();
-                    item.amount = (int)Mathf.Floor(item.amount * Instance.configData.Settings.foodDecay);
+                    Instance.DoLog("Fridge has power. Skipping...");
+                    return;
+                }
+
+                if (Instance.configData.Settings.spoilFood)
+                {
+                    foreach (Item item in box.inventory.itemList)
+                    {
+                        Instance.DoLog($"Checking item name {item.name.ToString()}");
+                        if (item.name.Contains("spoiled")) continue;
+                        if (item.name.Contains("burned")) continue;
+                        if (item.amount < 1) continue;
+
+                        string oldamt = item.amount.ToString();
+                        item.amount = (int)Mathf.Floor(item.amount * Instance.configData.Settings.foodDecay);
+                        int diff = item.amount - int.Parse(oldamt);
+                        if (diff >= 1)
+                        {
+                            string newitemname = null;
+                            if (skipitems.Contains(item.name))
+                            {
+                                continue;
+                            }
+                            else if (usitems.Contains(item.name))
+                            {
+                                newitemname = item.name + "_spoiled";
+                            }
+                            else if (dotitems.Contains(item.name))
+                            {
+                                newitemname = item.name + ".spoiled";
+                            }
+                            else
+                            {
+                                newitemname = item.name + ".burned";
+                            }
+                            Item newitem = ItemManager.CreateByName(newitemname, diff);
+                            newitem.MoveToContainer(box.inventory);
+                        }
+                    }
+                }
+                else
+                {
+                    foreach (Item item in box.inventory.itemList)
+                    {
+                        if (item.amount < 1) continue;
+                        string oldamt = item.amount.ToString();
+                        item.amount = (int)Mathf.Floor(item.amount * Instance.configData.Settings.foodDecay);
+                    }
                 }
                 box.UpdateNetworkGroup();
                 box.SendNetworkUpdateImmediate();
