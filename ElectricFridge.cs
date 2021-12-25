@@ -1,4 +1,4 @@
-﻿#region License (GPL v3)
+#region License (GPL v3)
 /*
     Electric Fridge
     Copyright (c) 2021 RFC1920 <desolationoutpostpve@gmail.com>
@@ -30,14 +30,14 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Electric Fridge", "RFC1920", "1.0.6")]
+    [Info("Electric Fridge", "RFC1920", "1.0.7")]
     [Description("Is your refrigerator running?")]
 
-    class ElectricFridge : RustPlugin
+    internal class ElectricFridge : RustPlugin
     {
         private ConfigData configData;
-        public static ElectricFridge Instance = null;
-        const string FRBTN = "fridge.status";
+        public static ElectricFridge Instance;
+        private const string FRBTN = "fridge.status";
         private readonly DateTime lastUpdate;
 
         private List<uint> fridges = new List<uint>();
@@ -45,21 +45,21 @@ namespace Oxide.Plugins
         private string Lang(string key, string id = null, params object[] args) => string.Format(lang.GetMessage(key, this, id), args);
         private void Message(IPlayer player, string key, params object[] args) => player.Reply(Lang(key, player.Id, args));
 
-        private List<string> orDefault = new List<string>();
+        private readonly List<string> orDefault = new List<string>();
 
         private void DoLog(string message)
         {
             if (configData.Settings.debug) Puts(message);
         }
 
-        void Init()
+        private void Init()
         {
             Instance = this;
             LoadConfigValues();
             AddCovalenceCommand("fr", "EnableDisable");
         }
 
-        void OnServerInitialized()
+        private void OnServerInitialized()
         {
             LoadData();
 
@@ -73,9 +73,14 @@ namespace Oxide.Plugins
                     toremove.Add(pid);
                     continue;
                 }
+                ElectricalBranch br = fridge.gameObject.GetComponentInChildren<ElectricalBranch>();
+                if (br != null) RemoveComps(br);
+
+                ElectricalHeater ht = fridge.gameObject.GetComponentInChildren<ElectricalHeater>();
+                if (ht != null) RemoveComps(ht);
 
                 DoLog("Adding FoodDecay");
-                (fridge as BaseEntity).gameObject.AddComponent<FoodDecay>();
+                (fridge as BaseEntity)?.gameObject.AddComponent<FoodDecay>();
             }
             foreach (uint tr in toremove)
             {
@@ -91,8 +96,7 @@ namespace Oxide.Plugins
                 CuiHelper.DestroyUi(player, FRBTN);
             }
 
-            FoodDecay[] decays = Resources.FindObjectsOfTypeAll<FoodDecay>();
-            foreach (FoodDecay decay in decays)
+            foreach (FoodDecay decay in Resources.FindObjectsOfTypeAll<FoodDecay>())
             {
                 UnityEngine.Object.Destroy(decay);
             }
@@ -102,10 +106,12 @@ namespace Oxide.Plugins
         {
             fridges = Interface.Oxide.DataFileSystem.ReadObject<List<uint>>(Name + "/fridges");
         }
+
         private void SaveData()
         {
             Interface.Oxide.DataFileSystem.WriteObject(Name + "/fridges", fridges);
         }
+
         protected override void LoadDefaultMessages()
         {
             lang.RegisterMessages(new Dictionary<string, string>()
@@ -117,7 +123,7 @@ namespace Oxide.Plugins
             }, this);
         }
 
-        void OnEntitySpawned(BaseEntity fridge)
+        private void OnEntitySpawned(BaseEntity fridge)
         {
             if (fridge == null) return;
             if (string.IsNullOrEmpty(fridge.ShortPrefabName)) return;
@@ -133,7 +139,7 @@ namespace Oxide.Plugins
                     return;
                 }
 
-                BaseEntity bent = GameManager.server.CreateEntity("assets/prefabs/deployable/playerioents/gates/branch/electrical.branch.deployed.prefab", fridge.transform.position, fridge.transform.rotation, true);
+                BaseEntity bent = fridge.gameObject.GetComponentInChildren<ElectricalBranch>() as BaseEntity ?? GameManager.server.CreateEntity("assets/prefabs/deployable/playerioents/gates/branch/electrical.branch.deployed.prefab", fridge.transform.position, fridge.transform.rotation, true);
                 ElectricalBranch branch = bent as ElectricalBranch;
                 if (bent != null)
                 {
@@ -141,12 +147,11 @@ namespace Oxide.Plugins
                     bent.transform.localPosition = new Vector3(-0.49f, 0.65f, 0);
                     bent.OwnerID = fridge.OwnerID;
                     bent.SetParent(fridge);
-                    UnityEngine.Object.Destroy(bent.GetComponent<DestroyOnGroundMissing>());
-                    UnityEngine.Object.Destroy(bent.GetComponent<GroundWatch>());
+                    RemoveComps(bent);
                     bent.Spawn();
                 }
 
-                BaseEntity hent = GameManager.server.CreateEntity("assets/prefabs/deployable/playerioents/electricheater/electrical.heater.prefab", fridge.transform.position, fridge.transform.rotation, true);
+                BaseEntity hent = fridge.gameObject.GetComponentInChildren<ElectricalHeater>() as BaseEntity ?? GameManager.server.CreateEntity("assets/prefabs/deployable/playerioents/electricheater/electrical.heater.prefab", fridge.transform.position, fridge.transform.rotation, true);
                 ElectricalHeater heater = hent as ElectricalHeater;
                 if (hent != null)
                 {
@@ -154,8 +159,7 @@ namespace Oxide.Plugins
                     hent.transform.localPosition = new Vector3(0, 0.65f, 0);
                     hent.OwnerID = fridge.OwnerID;
                     hent.SetParent(fridge);
-                    UnityEngine.Object.Destroy(hent.GetComponent<DestroyOnGroundMissing>());
-                    UnityEngine.Object.Destroy(hent.GetComponent<GroundWatch>());
+                    RemoveComps(hent);
                     hent.Spawn();
                 }
                 DoLog("Adding FoodDecay object");
@@ -170,10 +174,20 @@ namespace Oxide.Plugins
             }
         }
 
+        public void RemoveComps(BaseEntity obj)
+        {
+            UnityEngine.Object.DestroyImmediate(obj.GetComponent<DestroyOnGroundMissing>());
+            UnityEngine.Object.DestroyImmediate(obj.GetComponent<GroundWatch>());
+            foreach (MeshCollider mesh in obj.GetComponentsInChildren<MeshCollider>())
+            {
+                UnityEngine.Object.DestroyImmediate(mesh);
+            }
+        }
+
         private void Connect(ElectricalHeater heater, ElectricalBranch branch)
         {
-            int inputSlot = 0;
-            int outputSlot = 1;
+            const int inputSlot = 0;
+            const int outputSlot = 1;
             branch.branchAmount = 5;
 
             IOEntity branchIO = branch as IOEntity;
@@ -214,6 +228,7 @@ namespace Oxide.Plugins
                 }
             }
         }
+
         private void OnEntityKill(ElectricalHeater heater)
         {
             BaseEntity f = heater.GetParentEntity();
@@ -230,6 +245,7 @@ namespace Oxide.Plugins
                 }
             }
         }
+
         private object CanPickupEntity(BasePlayer player, ElectricalHeater heater)
         {
             if (player == null || heater == null) return null;
@@ -244,6 +260,7 @@ namespace Oxide.Plugins
             }
             return null;
         }
+
         private object CanPickupEntity(BasePlayer player, ElectricalBranch branch)
         {
             if (player == null || branch == null) return null;
@@ -258,6 +275,7 @@ namespace Oxide.Plugins
             }
             return null;
         }
+
         private object CanPickupEntity(BasePlayer player, BaseCombatEntity fridge)
         {
             if (player == null || fridge == null) return null;
@@ -410,7 +428,7 @@ namespace Oxide.Plugins
         {
             public static CuiElementContainer Container(string panel, string color, string min, string max, bool useCursor = false, string parent = "Overlay")
             {
-                CuiElementContainer container = new CuiElementContainer()
+                return new CuiElementContainer()
                 {
                     {
                         new CuiPanel
@@ -423,8 +441,8 @@ namespace Oxide.Plugins
                         panel
                     }
                 };
-                return container;
             }
+
             public static void Panel(ref CuiElementContainer container, string panel, string color, string min, string max, bool cursor = false)
             {
                 container.Add(new CuiPanel
@@ -435,6 +453,7 @@ namespace Oxide.Plugins
                 },
                 panel);
             }
+
             public static void Label(ref CuiElementContainer container, string panel, string color, string text, int size, string min, string max, TextAnchor align = TextAnchor.MiddleCenter)
             {
                 container.Add(new CuiLabel
@@ -443,8 +462,8 @@ namespace Oxide.Plugins
                     RectTransform = { AnchorMin = min, AnchorMax = max }
                 },
                 panel);
-
             }
+
             public static string Color(string hexColor, float alpha)
             {
                 if (hexColor.StartsWith("#"))
@@ -555,7 +574,7 @@ namespace Oxide.Plugins
                         }
                         else if (Instance.configData.Settings.spoilFood)
                         {
-                            Instance.DoLog($"Spoiling/burning food");
+                            Instance.DoLog("Spoiling/burning food");
                             string newitemname = null;
                             if (spoil.ContainsKey(item.info.name))
                             {
