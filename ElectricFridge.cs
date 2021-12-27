@@ -30,7 +30,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Electric Fridge", "RFC1920", "1.0.7")]
+    [Info("Electric Fridge", "RFC1920", "1.0.8")]
     [Description("Is your refrigerator running?")]
 
     internal class ElectricFridge : RustPlugin
@@ -40,6 +40,7 @@ namespace Oxide.Plugins
         private const string FRBTN = "fridge.status";
         private readonly DateTime lastUpdate;
 
+        private bool startup;
         private List<uint> fridges = new List<uint>();
 
         private string Lang(string key, string id = null, params object[] args) => string.Format(lang.GetMessage(key, this, id), args);
@@ -87,6 +88,7 @@ namespace Oxide.Plugins
                 fridges.Remove(tr);
             }
             SaveData();
+            startup = true;
         }
 
         private void Unload()
@@ -125,6 +127,7 @@ namespace Oxide.Plugins
 
         private void OnEntitySpawned(BaseEntity fridge)
         {
+            if (!startup) return;
             if (fridge == null) return;
             if (string.IsNullOrEmpty(fridge.ShortPrefabName)) return;
             if (fridge.ShortPrefabName.Equals("fridge.deployed"))
