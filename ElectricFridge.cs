@@ -30,7 +30,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Electric Fridge", "RFC1920", "1.0.8")]
+    [Info("Electric Fridge", "RFC1920", "1.0.9")]
     [Description("Is your refrigerator running?")]
 
     internal class ElectricFridge : RustPlugin
@@ -284,7 +284,7 @@ namespace Oxide.Plugins
             if (player == null || fridge == null) return null;
             if (fridge.ShortPrefabName.Equals("fridge.deployed"))
             {
-                ElectricalHeater electrified = fridge.GetComponentInChildren<ElectricalHeater>() ?? null;
+                ElectricalHeater electrified = fridge.GetComponentInChildren<ElectricalHeater>();
                 if (electrified == null)
                 {
                     return null;
@@ -306,12 +306,27 @@ namespace Oxide.Plugins
             return null;
         }
 
+        // For RemoverTool
+        private object canRemove(BasePlayer player, BaseEntity part)
+        {
+            if (part is ElectricalBranch)
+            {
+                return CanPickupEntity(player, part as ElectricalBranch);
+            }
+            if (part is ElectricalHeater)
+            {
+                return CanPickupEntity(player, part as ElectricalHeater);
+            }
+
+            return null;
+        }
+
         private object CanLootEntity(BasePlayer player, StorageContainer container)
         {
             BaseEntity fridge = container.GetComponentInParent<BaseEntity>();
             if (fridge.ShortPrefabName.Equals("fridge.deployed"))
             {
-                ElectricalHeater electrified = container.GetComponentInChildren<ElectricalHeater>() ?? null;
+                ElectricalHeater electrified = container.GetComponentInChildren<ElectricalHeater>();
                 if (electrified == null) return null;
                 if (!electrified.IsPowered() && configData.Settings.blockLooting)
                 {
@@ -514,9 +529,9 @@ namespace Oxide.Plugins
 
             public void Awake()
             {
-                box = GetComponent<StorageContainer>() ?? null;
+                box = GetComponent<StorageContainer>();
                 Instance.DoLog("Found box");
-                heater = GetComponentInChildren<ElectricalHeater>() ?? null;
+                heater = GetComponentInChildren<ElectricalHeater>();
                 if (heater != null && Instance.configData.Settings.decay)
                 {
                     Instance.DoLog("Found heater");
