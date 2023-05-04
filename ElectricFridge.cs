@@ -30,7 +30,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Electric Fridge", "RFC1920", "1.0.9")]
+    [Info("Electric Fridge", "RFC1920", "1.0.10")]
     [Description("Is your refrigerator running?")]
 
     internal class ElectricFridge : RustPlugin
@@ -68,7 +68,7 @@ namespace Oxide.Plugins
             foreach (uint pid in fridges)
             {
                 DoLog("Setting up old fridge");
-                BaseNetworkable fridge = BaseNetworkable.serverEntities.Find(pid);
+                BaseNetworkable fridge = BaseNetworkable.serverEntities.Find(new NetworkableId(pid));
                 if (fridge == null)
                 {
                     toremove.Add(pid);
@@ -172,7 +172,7 @@ namespace Oxide.Plugins
                 {
                     Connect(heater, branch);
                 }
-                fridges.Add(fridge.net.ID);
+                fridges.Add((uint)fridge.net.ID.Value);
                 SaveData();
             }
         }
@@ -222,9 +222,9 @@ namespace Oxide.Plugins
             {
                 if (f.ShortPrefabName == "fridge.deployed")
                 {
-                    if (fridges.Contains(f.net.ID))
+                    if (fridges.Contains((uint)f.net.ID.Value))
                     {
-                        fridges.Remove(f.net.ID);
+                        fridges.Remove((uint)f.net.ID.Value);
                         SaveData();
                     }
                     f.Kill();
@@ -239,9 +239,9 @@ namespace Oxide.Plugins
             {
                 if (f.ShortPrefabName == "fridge.deployed")
                 {
-                    if (fridges.Contains(f.net.ID))
+                    if (fridges.Contains((uint)f.net.ID.Value))
                     {
-                        fridges.Remove(f.net.ID);
+                        fridges.Remove((uint)f.net.ID.Value);
                         SaveData();
                     }
                     f.Kill();
@@ -296,9 +296,9 @@ namespace Oxide.Plugins
                         // Block pickup when powered, because danger or something.
                         return true;
                     }
-                    if (fridges.Contains(fridge.net.ID))
+                    if (fridges.Contains((uint)fridge.net.ID.Value))
                     {
-                        fridges.Remove(fridge.net.ID);
+                        fridges.Remove((uint)fridge.net.ID.Value);
                         SaveData();
                     }
                 }
